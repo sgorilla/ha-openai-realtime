@@ -11,15 +11,35 @@ logger = logging.getLogger(__name__)
 class AudioRecorder:
     """Records audio to WAV files for debugging."""
     
-    def __init__(self, output_dir: str = "recordings"):
+    def __init__(
+        self,
+        output_dir: str = "recordings",
+        input_sample_rate: int = 16000,
+        output_sample_rate: int = 24000,
+        max_duration_seconds: int = 600,
+        retention_bytes: int = 100 * 1024 * 1024,
+    ):
         """
         Initialize audio recorder.
         
         Args:
             output_dir: Directory to save recordings
+            input_sample_rate: Device microphone sample rate
+            output_sample_rate: Assistant speaker sample rate
+            max_duration_seconds: Hard limit for each input/output stream
+            retention_bytes: Maximum space reserved for all recordings
         """
         self.output_dir = output_dir
+        self.input_sample_rate = input_sample_rate
+        self.output_sample_rate = output_sample_rate
+        self.max_duration_seconds = max_duration_seconds
+        self.retention_bytes = retention_bytes
+        self._input_limit = input_sample_rate * 2 * max_duration_seconds
+        self._output_limit = output_sample_rate * 2 * max_duration_seconds
+        self._input_limit_logged = False
+        self._output_limit_logged = False
         os.makedirs(output_dir, exist_ok=True)
+        self._prune_old_recordings()
         
         # File handles for recording
         self._input_file: Optional[object] = None  # Audio from ESP32 device
@@ -36,22 +56,32 @@ class AudioRecorder:
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Input audio (from ESP32 device) - 24kHz, 16-bit, mono
+        # Input audio (from ESP32 device) - 16-bit mono
         input_filename = os.path.join(
             self.output_dir,
             f"input_{client_id}_{timestamp}.wav"
         )
         self._input_file = open(input_filename, "wb")
-        self._write_wav_header(self._input_file, sample_rate=24000, channels=1, bits_per_sample=16)
+        self._write_wav_header(
+            self._input_file,
+            sample_rate=self.input_sample_rate,
+            channels=1,
+            bits_per_sample=16,
+        )
         self._input_bytes = 0
         
-        # Output audio (from OpenAI) - 24kHz, 16-bit, mono
+        # Output audio (from OpenAI) - 16-bit mono
         output_filename = os.path.join(
             self.output_dir,
             f"output_{client_id}_{timestamp}.wav"
         )
         self._output_file = open(output_filename, "wb")
-        self._write_wav_header(self._output_file, sample_rate=24000, channels=1, bits_per_sample=16)
+        self._write_wav_header(
+            self._output_file,
+            sample_rate=self.output_sample_rate,
+            channels=1,
+            bits_per_sample=16,
+        )
         self._output_bytes = 0
         
         logger.info(f"🎙️ Started recording: input={input_filename}, output={output_filename}")
@@ -68,9 +98,14 @@ class AudioRecorder:
             if len(audio_bytes) % 2 != 0:
                 logger.warning(f"⚠️ Input audio has odd byte count: {len(audio_bytes)}, padding with zero")
                 audio_bytes = audio_bytes + b'\x00'  # Pad with one zero byte
+            remaining = self._input_limit - self._input_bytes
+            audio_bytes = audio_bytes[:max(0, remaining)]
             self._input_file.write(audio_bytes)
             self._input_file.flush()  # Ensure data is written to disk
             self._input_bytes += len(audio_bytes)
+            if self._input_bytes >= self._input_limit and not self._input_limit_logged:
+                logger.warning("🎙️ Input recording reached the 10-minute safety limit")
+                self._input_limit_logged = True
             
     def record_output_audio(self, audio_bytes: bytes):
         """
@@ -84,9 +119,14 @@ class AudioRecorder:
             if len(audio_bytes) % 2 != 0:
                 logger.warning(f"⚠️ Output audio has odd byte count: {len(audio_bytes)}, padding with zero")
                 audio_bytes = audio_bytes + b'\x00'  # Pad with one zero byte
+            remaining = self._output_limit - self._output_bytes
+            audio_bytes = audio_bytes[:max(0, remaining)]
             self._output_file.write(audio_bytes)
             self._output_file.flush()  # Ensure data is written to disk
             self._output_bytes += len(audio_bytes)
+            if self._output_bytes >= self._output_limit and not self._output_limit_logged:
+                logger.warning("🎙️ Output recording reached the 10-minute safety limit")
+                self._output_limit_logged = True
             
     def stop_recording(self):
         """Stop recording and finalize WAV files."""
@@ -152,3 +192,27 @@ class AudioRecorder:
         file.write(b'data')
         file.write(struct.pack('<I', 0))  # Data size (will be updated later)
 
+    def _prune_old_recordings(self):
+        """Reserve room for one bounded session by removing oldest WAV files."""
+        session_reserve = self._input_limit + self._output_limit + 88
+        target = max(0, self.retention_bytes - session_reserve)
+        files = []
+        for name in os.listdir(self.output_dir):
+            if not name.endswith(".wav"):
+                continue
+            path = os.path.join(self.output_dir, name)
+            try:
+                files.append((os.path.getmtime(path), os.path.getsize(path), path))
+            except OSError:
+                continue
+
+        total = sum(size for _, size, _ in files)
+        for _, size, path in sorted(files):
+            if total <= target:
+                break
+            try:
+                os.remove(path)
+                total -= size
+                logger.info("🧹 Removed old debug recording: %s", path)
+            except OSError as exc:
+                logger.warning("Could not remove old recording %s: %s", path, exc)

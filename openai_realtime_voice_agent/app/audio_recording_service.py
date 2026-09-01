@@ -57,7 +57,8 @@ class AudioRecordingService:
     def __init__(
         self,
         enable_recording: bool = False,
-        sample_rate: int = 24000,
+        input_sample_rate: int = 16000,
+        output_sample_rate: int = 24000,
         chunk_duration_seconds: int = 30,
         output_dir: str = "recordings"
     ):
@@ -66,12 +67,14 @@ class AudioRecordingService:
         
         Args:
             enable_recording: Whether to enable audio recording
-            sample_rate: Audio sample rate in Hz (default: 24000)
+            input_sample_rate: Device microphone sample rate in Hz (default: 16000)
+            output_sample_rate: OpenAI speaker sample rate in Hz (default: 24000)
             chunk_duration_seconds: Duration of audio chunks in seconds (default: 30)
             output_dir: Directory to save recordings
         """
         self.enable_recording = enable_recording
-        self.sample_rate = sample_rate
+        self.input_sample_rate = input_sample_rate
+        self.output_sample_rate = output_sample_rate
         self.chunk_duration_seconds = chunk_duration_seconds
         self.output_dir = output_dir
         
@@ -85,7 +88,11 @@ class AudioRecordingService:
     def _initialize_recording(self):
         """Initialize audio recording components."""
         # Create audio recorder
-        self.audio_recorder = AudioRecorder(output_dir=self.output_dir)
+        self.audio_recorder = AudioRecorder(
+            output_dir=self.output_dir,
+            input_sample_rate=self.input_sample_rate,
+            output_sample_rate=self.output_sample_rate,
+        )
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.audio_recorder.start_recording(client_id=f"session_{timestamp}")
         
@@ -124,7 +131,11 @@ class AudioRecordingService:
         # Create new recorder for this session
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_id = client_id or f"session_{timestamp}"
-        self.audio_recorder = AudioRecorder(output_dir=self.output_dir)
+        self.audio_recorder = AudioRecorder(
+            output_dir=self.output_dir,
+            input_sample_rate=self.input_sample_rate,
+            output_sample_rate=self.output_sample_rate,
+        )
         self.audio_recorder.start_recording(client_id=session_id)
         
         # Update recorders with new audio_recorder instance
@@ -149,4 +160,3 @@ class AudioRecordingService:
         if self.audio_recorder:
             self.audio_recorder.stop_recording()
             self.audio_recorder = None
-

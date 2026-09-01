@@ -13,6 +13,8 @@ host_network: true
 # Gives the add-on SUPERVISOR_TOKEN so it can reach Home Assistant (used as a
 # fallback auth token for the MCP server when longlived_token is left blank).
 homeassistant_api: true
+map:
+  - share:rw
 
 # ----------------------------------------------------------------------------
 # Options are ORDERED for the Configuration tab (HA renders them in this order)

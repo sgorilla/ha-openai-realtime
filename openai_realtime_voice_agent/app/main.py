@@ -75,6 +75,13 @@ class SafeRealtimeLLMService(OpenAIRealtimeLLMService):
     cosmetic for context.)
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Each intentional reset advances the generation. A receive loop that
+        # began under an older generation belongs to the websocket we closed on
+        # purpose and must not report that normal shutdown as a connection error.
+        self._reset_generation = 0
+
     async def _truncate_current_audio_response(self):  # type: ignore[override]
         return
 
@@ -101,6 +108,7 @@ class SafeRealtimeLLMService(OpenAIRealtimeLLMService):
         ourselves on reconnect. The live context is untouched (it's restored by the
         SessionManager on the next real turn).
         """
+        self._reset_generation += 1
         await super().reset_conversation()
         try:
             self._run_llm_when_api_session_ready = False
@@ -197,12 +205,19 @@ class SafeRealtimeLLMService(OpenAIRealtimeLLMService):
         Wrap the loop and report its end; ConnectionRecovery treats the
         message as a reconnect trigger.
         """
+        generation = self._reset_generation
         try:
             await super()._receive_task_handler()
         except asyncio.CancelledError:
             raise  # our own disconnect/reset tearing the task down — not a death
         except Exception as e:
+            if generation != self._reset_generation:
+                logger.debug("Intentional realtime receive loop shutdown during reset")
+                return
             await self.push_error(error_msg=f"realtime receive loop died: {e!r}")
+            return
+        if generation != self._reset_generation:
+            logger.debug("Intentional realtime receive loop end during reset")
             return
         # Loop ended without an exception: a clean server-side close, or the
         # fatal-error path (which already pushed its own ErrorFrame —
@@ -412,6 +427,17 @@ class Application:
         except Exception as e:
             logger.warning(f"⚠️ Failed to initialize Home Assistant MCP Client: {e}")
         
+        # Initialize audio recording before the WebSocket handler so the handler
+        # receives the live service (rather than the initial None placeholder).
+        # /share is a Supervisor-managed persistent mount declared in config.yaml.
+        self.audio_recording_service = AudioRecordingService(
+            enable_recording=enable_recording,
+            input_sample_rate=16000,
+            output_sample_rate=24000,
+            chunk_duration_seconds=30,
+            output_dir="/share/openai_realtime_recordings"
+        )
+
         # Initialize WebSocket handler
         self.websocket_handler = WebSocketHandler(
             host=websocket_host,
@@ -455,14 +481,6 @@ class Application:
         self.enable_web_search = enable_web_search
         self.web_search_model = web_search_model
 
-        # Initialize audio recording service (optional)
-        self.audio_recording_service = AudioRecordingService(
-            enable_recording=enable_recording,
-            sample_rate=24000,
-            chunk_duration_seconds=30,
-            output_dir="recordings"
-        )
-        
         logger.info("✅ Application initialized - ready to accept WebSocket connections")
     
     def _build_pipeline_for_transport(self, transport: WebsocketServerTransport, client_id: str):
