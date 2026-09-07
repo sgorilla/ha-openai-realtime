@@ -1,5 +1,5 @@
 name: OpenAI Realtime 2 Voice Agent
-version: "0.6.2"
+version: "0.6.3"
 slug: openai_realtime_voice_agent
 description: Talk to your home with OpenAI gpt-realtime-2 — a voice agent for the Home Assistant Voice PE, with live device control and web search.
 url: https://github.com/xandervanerven/ha-openai-realtime
@@ -95,6 +95,9 @@ options:
   # 150 (not 0): cushions WS jitter so the speaker doesn't run dry mid-word
   # (the start-of-reply crackle); costs 150 ms of reply latency.
   playback_prebuffer_ms: 150
+  # The custom Voice PE safely keeps this bounded cushion in its PSRAM ring.
+  # Set 0 to restore stock Pipecat pacing for a direct A/B comparison.
+  audio_send_ahead_ms: 3000
   noise_reduction: "off"
 
   # --- 🏠 Home Assistant ---
@@ -141,6 +144,7 @@ schema:
   web_search_model_custom: str?
   # --- 🎚️ Audio ---
   playback_prebuffer_ms: int(0,2000)
+  audio_send_ahead_ms: int(0,10000)
   noise_reduction: "list(off|near_field|far_field)"
   # --- 🏠 Home Assistant ---
   share_home_location: bool

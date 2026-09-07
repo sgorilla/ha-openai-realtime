@@ -25,6 +25,7 @@ WEB_SEARCH_MODEL=$(bashio::config 'web_search_model')
 
 # --- 🎚️ Audio ---
 PLAYBACK_PREBUFFER_MS=$(bashio::config 'playback_prebuffer_ms')
+AUDIO_SEND_AHEAD_MS=$(bashio::config 'audio_send_ahead_ms')
 NOISE_REDUCTION=$(bashio::config 'noise_reduction')
 
 # --- 🏠 Home Assistant ---
@@ -64,6 +65,7 @@ export PHASE_IDLE_DEBOUNCE_MS
 export ENABLE_WEB_SEARCH
 export WEB_SEARCH_MODEL
 export PLAYBACK_PREBUFFER_MS
+export AUDIO_SEND_AHEAD_MS
 export NOISE_REDUCTION
 export LONGLIVED_TOKEN
 export MCP_TOOL_ALLOWLIST

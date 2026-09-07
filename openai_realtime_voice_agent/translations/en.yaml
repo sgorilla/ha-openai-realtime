@@ -133,6 +133,13 @@ configuration:
       bigger buffer absorbs brief Wi-Fi hiccups (the occasional crackle), but
       every answer starts this much later. 150 is a good balance; raise to
       250–300 if you still hear crackle, 0 = play immediately.
+  audio_send_ahead_ms:
+    name: "🎚️ Audio · Send-ahead cushion (ms)"
+    description: >-
+      How far already-generated audio may be sent ahead to the buffered Voice
+      PE. This lets its playback buffer refill after a brief server or Wi-Fi
+      stall without risking an unbounded burst. 3000 is recommended for the
+      custom buffered firmware; 0 restores standard Pipecat pacing for an A/B.
   noise_reduction:
     name: "🎚️ Audio · Microphone noise reduction"
     description: >-

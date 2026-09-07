@@ -446,6 +446,14 @@ class Application:
         except (TypeError, ValueError):
             playback_prebuffer_ms = 150
         playback_prebuffer_ms = max(0, min(2000, playback_prebuffer_ms))
+        # Pipecat's default WebSocket scheduler cannot restore lost device-buffer
+        # depth after a stall. A bounded send-ahead cushion can; unlike fully
+        # unpaced output, it cannot overflow the Voice PE's finite PSRAM ring.
+        try:
+            audio_send_ahead_ms = int(os.environ.get("AUDIO_SEND_AHEAD_MS", "3000"))
+        except (TypeError, ValueError):
+            audio_send_ahead_ms = 3000
+        audio_send_ahead_ms = max(0, min(10000, audio_send_ahead_ms))
 
         # Get session reuse timeout and initialize session manager
         session_reuse_timeout = float(os.environ.get("SESSION_REUSE_TIMEOUT_SECONDS", "300"))
@@ -525,13 +533,15 @@ class Application:
             follow_up_open_delay_ms=follow_up_open_delay_ms,
             wake_open_delay_ms=wake_open_delay_ms,
             playback_prebuffer_ms=playback_prebuffer_ms,
+            audio_send_ahead_ms=audio_send_ahead_ms,
         )
         logger.info(
             f"🔁 Follow-up window: {follow_up_listen_seconds}s "
             f"({'enabled' if follow_up_ms > 0 else 'disabled — turn-based'}), "
             f"mic-open delay {follow_up_open_delay_ms}ms, "
             f"wake-open delay {wake_open_delay_ms}ms, "
-            f"playback prebuffer {playback_prebuffer_ms}ms"
+            f"playback prebuffer {playback_prebuffer_ms}ms, "
+            f"audio send-ahead {audio_send_ahead_ms}ms"
         )
         self.websocket_transport = self.websocket_handler.create_transport()
         
