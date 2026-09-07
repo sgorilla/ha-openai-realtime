@@ -561,21 +561,25 @@ class Application:
 
             # Get MCP tool definitions if available
             mcp_tools_schema = None
+            mcp_tool_bindings = []
             if self.mcp_client:
                 try:
                     logger.info("🔧 Fetching MCP tool definitions...")
                     mcp_tools_schema = await self.mcp_client.get_tools_schema()
-                    
-                    # Convert MCP tool schemas to OpenAI format, applying the
-                    # optional allow-list so the realtime session isn't flooded
-                    # with ha-mcp's 80+ tools.
-                    exposed = 0
-                    for function_schema in mcp_tools_schema.standard_tools:
-                        if self.mcp_tool_allowlist and function_schema.name not in self.mcp_tool_allowlist:
-                            continue
+
+                    # Home Assistant namespaces MCP tools (for example,
+                    # llm__GetDateTime), while the Realtime API calls the clean
+                    # public name (GetDateTime). Keep an explicit binding so the
+                    # eventual MCP request uses HA's exact source name.
+                    mcp_tool_bindings = self.mcp_service.build_tool_bindings(
+                        mcp_tools_schema,
+                        self.mcp_tool_allowlist,
+                    )
+                    for binding in mcp_tool_bindings:
+                        function_schema = binding.schema
                         openai_tool = {
                             "type": "function",
-                            "name": function_schema.name,
+                            "name": binding.exposed_name,
                             "description": function_schema.description,
                             "parameters": {
                                 "type": "object",
@@ -584,12 +588,11 @@ class Application:
                             }
                         }
                         all_tools.append(openai_tool)
-                        exposed += 1
 
                     if self.mcp_tool_allowlist:
-                        logger.info(f"✅ Fetched {len(mcp_tools_schema.standard_tools)} MCP tools, exposing {exposed} per allow-list")
+                        logger.info(f"✅ Fetched {len(mcp_tools_schema.standard_tools)} MCP tools, exposing {len(mcp_tool_bindings)} per allow-list")
                     else:
-                        logger.info(f"✅ Fetched {len(mcp_tools_schema.standard_tools)} MCP tools")
+                        logger.info(f"✅ Fetched and bound {len(mcp_tool_bindings)} MCP tools")
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to fetch MCP tool definitions: {e}")
             
@@ -704,10 +707,13 @@ class Application:
                 logger.info(f"✅ Registered web_search tool handler (model={self.web_search_model})")
             
             # Register MCP tool handlers if available
-            if self.mcp_client and mcp_tools_schema:
+            if self.mcp_service and mcp_tool_bindings:
                 try:
-                    await self.mcp_client.register_tools_schema(mcp_tools_schema, self.openai_service)
-                    logger.info(f"✅ Registered {len(mcp_tools_schema.standard_tools)} MCP tool handlers")
+                    await self.mcp_service.register_tool_bindings(
+                        mcp_tool_bindings,
+                        self.openai_service,
+                    )
+                    logger.info(f"✅ Registered {len(mcp_tool_bindings)} MCP tool handlers")
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to register MCP tool handlers: {e}")
             

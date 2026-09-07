@@ -2,6 +2,24 @@
 
 All notable changes to this add-on. Newest first.
 
+## 0.6.1
+
+**Home Assistant control and live information**
+
+- Fixed all Home Assistant tool calls after Home Assistant began publishing
+  namespaced MCP tool names. Requests such as “what time is it?”, “is the light
+  on?”, and device-control commands now map back to the exact tool name Home
+  Assistant expects instead of failing with “tool not found.”
+- `mcp_tool_allowlist` now accepts the short, documented names such as
+  `GetDateTime` and `GetLiveContext`, as well as Home Assistant's namespaced
+  forms.
+
+**Debug recordings**
+
+- Debug audio is stored in Home Assistant's persistent `/share` storage and
+  old recordings are bounded, so an add-on rebuild no longer destroys the
+  captures needed for troubleshooting.
+
 ## 0.6.0
 
 > ⚠️ **This update has two parts — please update both:**
