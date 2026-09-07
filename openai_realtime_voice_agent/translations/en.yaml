@@ -99,13 +99,11 @@ configuration:
       (default) waits patiently — best if you pause mid-sentence to think.
       "high" answers faster but may cut you off. "auto" lets OpenAI decide.
   phase_idle_debounce_ms:
-    name: "💬 Conversation · End-of-answer hold (ms)"
+    name: "💬 Conversation · Completion fallback (ms)"
     description: >-
-      How long the assistant must stay silent before the device considers the
-      answer finished. This bridges the natural pauses between sentences and
-      during smart-home actions, so the LED and the "stop" word keep working
-      through the whole answer. 1500 is a good default; raise it if the
-      device flips to idle in the middle of long answers.
+      Safety fallback used only if the normal ordered end-of-answer signal is
+      missing. Completed replies reopen listening without this delay. Keep the
+      default unless logs report a missing completion marker.
 
   # --- 🌐 Web search ---
   enable_web_search:
