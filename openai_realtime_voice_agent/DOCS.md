@@ -76,6 +76,7 @@ option has plain-language inline help.
 | `follow_up_open_delay_ms` | `700` | echo guard before the follow-up mic opens; lower = snappier but risks ghost turns |
 | `wake_open_delay_ms` | `700` | the same echo guard right after the wake chime; lower = snappier wake but risks a ghost turn |
 | `vad_eagerness` | `low` | waits longest before deciding you're done talking |
+| `phase_idle_debounce_ms` | `1500` | fallback only if the ordered response-completion marker is lost; normal replies do not wait it |
 | `playback_prebuffer_ms` | `150` | raise to ~250 if you hear crackle; 0 = play immediately |
 | `max_context_messages` | `12` | bounds per-turn token cost |
 | `enable_web_search` | `true` | online lookups; set `false` to disable |

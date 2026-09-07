@@ -8,10 +8,17 @@ import dotenv
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineTask
+from pipecat.frames.frames import OutputAudioRawFrame
 from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
 from pipecat.transports.websocket.server import WebsocketServerTransport
 from app.mcp_service import HomeAssistantMCPService
 from app.phase_emitter import TURN_LIVENESS
+from app.response_lifecycle import (
+    FinalResponseDoneFrame,
+    is_final_non_tool_response,
+    output_drain_padding_audio,
+    response_id,
+)
 from app.disconnect_tool import get_disconnect_tool_definition, create_disconnect_tool_handler
 from app.web_search_tool import get_web_search_tool_definition, create_web_search_tool_handler
 from app.audio_recording_service import AudioRecordingService
@@ -77,6 +84,50 @@ class SafeRealtimeLLMService(OpenAIRealtimeLLMService):
 
     async def _truncate_current_audio_response(self):  # type: ignore[override]
         return
+
+    async def _handle_evt_response_done(self, evt):  # type: ignore[override]
+        """Add an ordered turn-completion marker after the final response.
+
+        Pipecat's generic LLMFullResponseEndFrame is emitted for every
+        response.done, including tool-call responses and failures, and it is
+        observed before output audio has drained. Preserve Pipecat's normal
+        handling first, then append our marker only for a terminal response
+        with no function call. The output transport queues this ControlFrame
+        behind every preceding audio frame; ResponseCompletionObserver turns it
+        into phase=idle only after that queue boundary has crossed.
+        """
+
+        response = getattr(evt, "response", None)
+        final_non_tool = is_final_non_tool_response(response)
+        await super()._handle_evt_response_done(evt)
+        if final_non_tool:
+            marker_id = response_id(response)
+            logger.info(
+                f"📞 response.done final non-tool ({marker_id}) — "
+                "queueing ordered output barrier"
+            )
+            # Pipecat 0.0.97 buffers output in 40 ms chunks and otherwise drops
+            # the final sub-chunk when its bot-silence timer fires. One generic
+            # 40 ms zero frame flushes every residual speech byte into a full
+            # transport chunk; only leftover silence can then be discarded.
+            # Generic OutputAudioRawFrame deliberately does not create a new
+            # BotStartedSpeaking event.
+            await self.push_frame(
+                OutputAudioRawFrame(
+                    audio=output_drain_padding_audio(),
+                    sample_rate=24_000,
+                    num_channels=1,
+                )
+            )
+            await self.push_frame(FinalResponseDoneFrame(response_id=marker_id))
+        else:
+            status = getattr(response, "status", None)
+            output = getattr(response, "output", None) or ()
+            has_tool = any(getattr(item, "type", None) == "function_call" for item in output)
+            logger.info(
+                "📞 response.done does not end turn "
+                f"(status={status}, function_call={has_tool})"
+            )
 
     async def reset_conversation(self):  # type: ignore[override]
         """Reconnect WITHOUT forcing a response on the reconnected session.

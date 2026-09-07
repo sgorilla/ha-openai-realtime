@@ -20,7 +20,7 @@ from pipecat.services.openai.realtime import events as openai_rt_events
 from app.raw_audio_serializer import RawAudioSerializer
 from app.session_manager import SessionManager
 from app.audio_recording_service import AudioRecordingService
-from app.phase_emitter import PhaseEmitter
+from app.phase_emitter import PhaseEmitter, ResponseCompletionObserver
 from app.transcript_logger import TranscriptLogger
 
 logger = logging.getLogger(__name__)
@@ -513,6 +513,13 @@ class WebSocketHandler:
             pipeline_components.append(output_recorder)
 
         pipeline_components.append(transport.output())
+
+        # FinalResponseDoneFrame is a ControlFrame, so BaseOutputTransport puts
+        # it on the same ordered queue as reply audio. Observing it *after* the
+        # transport proves that every earlier audio chunk has been written to
+        # the device. Only then may PhaseEmitter send idle and let the Voice PE
+        # begin its physical queue-drain + echo-tail sequence.
+        pipeline_components.append(ResponseCompletionObserver(phase_emitter))
         
         # Add context initializer if we have cached messages
         if context_initializer:
@@ -619,6 +626,12 @@ class WebSocketHandler:
                     logger.info("🛑 device interrupt → no active response to cancel (device already silenced)")
             except Exception as e:
                 logger.info(f"🛑 device interrupt → response.cancel no-op ({e!r})")
+            # Cancelled responses intentionally produce no normal completion
+            # barrier. End the backend phase explicitly so it cannot remain
+            # stuck in replying forever. The firmware's suppress_followup_ flag
+            # makes this idle a close-only boundary: it will not reopen the mic
+            # after the user said stop.
+            await phase_emitter.force_idle("device-interrupt")
 
         @openai_service.event_handler("on_conversation_item_created")
         async def _kill_racing_response(service, item_id, item):
@@ -888,4 +901,3 @@ class WebSocketHandler:
                     await self.transport.stop()
             except Exception as e:
                 logger.warning(f"⚠️ Error stopping transport: {e}")
-
