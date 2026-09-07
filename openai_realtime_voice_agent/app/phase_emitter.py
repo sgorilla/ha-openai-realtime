@@ -15,22 +15,30 @@ Mapping:
     UserStartedSpeakingFrame  -> listening   (server VAD heard the user)
     UserStoppedSpeakingFrame  -> thinking    (generating a response)
     BotStartedSpeakingFrame   -> replying    (TTS audio is playing)
-    BotStoppedSpeakingFrame   -> idle, but DEBOUNCED (see below)
+    BotStoppedSpeakingFrame   -> legacy missing-marker fallback only
+    FinalResponseDoneFrame    -> ordered completion marker (see below)
 
-IMPORTANT — idle debounce:
+IMPORTANT — ordered reply completion:
     OpenAI Realtime TTS arrives in segments (per sentence, and around tool
-    calls), so BotStoppedSpeakingFrame fires several times *within a single
-    reply*, with sub-second gaps before the next BotStartedSpeakingFrame. If we
-    emitted "idle" on every BotStoppedSpeakingFrame the device's LED would flap
-    replying -> idle -> replying mid-answer, and — because the firmware only
-    arms the "stop" wake word during "replying" — the user would briefly lose
-    the ability to interrupt. So we do NOT go idle immediately on BotStopped:
-    we arm a short timer and only emit "idle" if no further bot/user speech
-    starts before it elapses (i.e. the reply has truly finished). Any
-    Bot/UserStartedSpeaking cancels the pending idle.
+    calls), so BotStoppedSpeakingFrame can fire several times *within a single
+    answer*. A silence timer cannot distinguish one of those gaps from the true
+    end of the answer; the old 1500 ms timer also left the microphone deaf for
+    an unnecessary 1.5 seconds after every completed reply.
+
+    SafeRealtimeLLMService now emits FinalResponseDoneFrame only for a terminal
+    response that contains no function call. The frame travels
+    through Pipecat's output transport as an ordered barrier, behind all audio
+    frames already generated for that response. ResponseCompletionObserver,
+    placed after transport.output(), calls complete_final_response() only once
+    that barrier has crossed the transport queue. At that point every reply
+    audio frame has been written to the device, so we can emit idle without a
+    guessed debounce. The Voice PE still owns physical playout safety: it waits
+    for its PSRAM/speaker queues to drain and then applies the configured 700 ms
+    hardware echo-tail guard before reopening the microphone.
 
 A barge-in mid-reply surfaces as a fresh UserStartedSpeakingFrame -> "listening"
-(which cancels the pending idle); the firmware uses that to flush playback.
+(which invalidates any queued old-response marker); the firmware uses that to
+flush playback.
 
 IMPORTANT — thinking watchdog + forced idle (v0.5.3):
     `thinking` is the one phase with no natural exit when a turn dies without
@@ -74,6 +82,8 @@ from pipecat.frames.frames import (
     BotStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
+
+from app.response_lifecycle import FinalResponseDoneFrame
 
 logger = logging.getLogger(__name__)
 
@@ -124,11 +134,8 @@ class PhaseEmitter(FrameProcessor):
         Args:
             send_phase: async callable(value: str) that delivers the phase to
                 the connected device(s).
-            idle_debounce_s: seconds the bot must stay silent after a reply
-                before we declare the turn idle. Defaults to the
-                PHASE_IDLE_DEBOUNCE_MS env var (1500 ms) — long enough to bridge
-                the inter-sentence / tool-call gaps in OpenAI Realtime TTS so the
-                LED and the "stop" wake word stay active for the whole answer.
+            idle_debounce_s: legacy/failure fallback only. Normal replies use
+                the ordered output barrier and do not wait for this timer.
         """
         super().__init__(**kwargs)
         self._send_phase = send_phase
@@ -139,8 +146,14 @@ class PhaseEmitter(FrameProcessor):
                 idle_debounce_s = 1.5
         self._idle_debounce_s = max(0.0, idle_debounce_s)
         self._idle_task = None
+        self._idle_generation = 0
         self._watchdog_task = None
         self._current = None  # last phase actually sent, to dedupe redundant emits
+        # Set when a terminal non-tool response.done passes this processor.
+        # The matching marker must still cross transport.output() before it may
+        # end the turn. A wake/user-start invalidates it so an old queued marker
+        # can never close a newer turn.
+        self._pending_final_response_id = None
         # Set by force_idle(): the turn was declared dead, so a VAD stop event
         # that is still in flight must NOT re-emit `thinking` and re-stick the
         # device. Cleared on the next real activity (user/bot speech start).
@@ -167,6 +180,8 @@ class PhaseEmitter(FrameProcessor):
         next real UserStartedSpeaking, any UserStoppedSpeaking is a dangling
         pre-wake VAD segment (see _speech_since_wake)."""
         self._speech_since_wake = False
+        self._pending_final_response_id = None
+        self._cancel_pending_idle()
 
     def set_kill_window_handlers(self, on_dangling=None, on_real_speech=None) -> None:
         """Wire the dangling-VAD guard to the websocket_handler kill-window."""
@@ -182,6 +197,7 @@ class PhaseEmitter(FrameProcessor):
         activity follows — see the module docstring for the race this
         prevents.
         """
+        self._pending_final_response_id = None
         self._cancel_pending_idle()
         self._cancel_watchdog()
         self._suppress_thinking = True
@@ -211,38 +227,70 @@ class PhaseEmitter(FrameProcessor):
             except Exception as e:  # never let UI signalling break the audio path
                 logger.warning(f"⚠️ Failed to emit phase '{value}': {e}")
 
-    def _cancel_pending_idle(self) -> None:
-        if self._idle_task is not None and not self._idle_task.done():
-            self._idle_task.cancel()
-        self._idle_task = None
-
     def _cancel_watchdog(self) -> None:
         if self._watchdog_task is not None and not self._watchdog_task.done():
             self._watchdog_task.cancel()
         self._watchdog_task = None
 
+    def _cancel_pending_idle(self) -> None:
+        # Invalidate the token captured by any task that is already waking up;
+        # cancel() alone is not a sufficient race boundary between asyncio
+        # callbacks.
+        self._idle_generation += 1
+        if self._idle_task is not None and not self._idle_task.done():
+            self._idle_task.cancel()
+        self._idle_task = None
+
     def _arm_watchdog(self) -> None:
         self._cancel_watchdog()
         self._watchdog_task = asyncio.create_task(self._thinking_watchdog())
 
-    async def _emit_idle_after_debounce(self) -> None:
+    async def _emit_idle_fallback(self, generation: int) -> None:
+        """Legacy safety net when an ordered completion marker never arrives."""
+
         try:
             await asyncio.sleep(self._idle_debounce_s)
         except asyncio.CancelledError:
             return
-        # A tool (web search, MCP call) can still be running when the filler
-        # reply's debounce expires — the turn isn't over, the model is
-        # "thinking" while it waits for the tool. Going idle here makes the
-        # device look done (idle LED, and it opens a follow-up window) while it
-        # is actually still working — confusing on a slow web search. Show
-        # `thinking` instead and arm the watchdog (which waits without a cap
-        # while a tool is in flight); the tool's result response then flips the
-        # phase to `replying`. Fast tools never reach here — their result reply
-        # cancels this debounce first.
+        # A late BotStopped from an old response must never close a newer turn.
+        # The token catches explicit invalidation; the phase check catches a
+        # frame that was stale at the moment it tried to arm this fallback.
+        if generation != self._idle_generation or self._current != "replying":
+            logger.info("📞 stale legacy silence fallback ignored")
+            return
         if TURN_LIVENESS.in_flight > 0:
             await self._emit("thinking")
             self._arm_watchdog()
             return
+        logger.warning(
+            "📞 no ordered response-completion marker arrived; "
+            "using legacy silence fallback"
+        )
+        await self._emit("idle")
+
+    async def complete_final_response(self, response_id: str) -> None:
+        """Emit idle after the matching completion marker drains through output.
+
+        The callback may arrive late after a wake, interrupt or newer turn. In
+        that case the marker was invalidated (or replaced) and must not close the
+        microphone gate belonging to the newer turn.
+        """
+
+        if response_id != self._pending_final_response_id:
+            logger.info(
+                "📞 stale response completion ignored "
+                f"(drained={response_id}, pending={self._pending_final_response_id})"
+            )
+            return
+        self._pending_final_response_id = None
+        self._cancel_pending_idle()
+        if self._current not in {"thinking", "replying", "idle"}:
+            logger.info(
+                "📞 drained response completion ignored in non-terminal phase "
+                f"{self._current!r}"
+            )
+            return
+        self._cancel_watchdog()
         await self._emit("idle")
 
     async def _thinking_watchdog(self) -> None:
@@ -284,16 +332,16 @@ class PhaseEmitter(FrameProcessor):
 
         if isinstance(frame, UserStartedSpeakingFrame):
             self._suppress_thinking = False
+            self._pending_final_response_id = None
+            self._cancel_pending_idle()
             # A: a genuine utterance has begun this turn → not a dangling VAD,
             # and the kill-window must NOT cancel THIS turn's response.
             self._speech_since_wake = True
             if self._on_real_speech is not None:
                 self._on_real_speech()
-            self._cancel_pending_idle()
             self._cancel_watchdog()
             await self._emit("listening")
         elif isinstance(frame, UserStoppedSpeakingFrame):
-            self._cancel_pending_idle()
             if self._current == "replying":
                 # C: the bot is already replying. With barge_in:false the mic is
                 # gated during a reply, so a user-speech-stop here can only be a
@@ -323,9 +371,42 @@ class PhaseEmitter(FrameProcessor):
             self._cancel_watchdog()
             await self._emit("replying")
         elif isinstance(frame, BotStoppedSpeakingFrame):
-            # Don't go idle immediately — TTS comes in segments. Only emit idle
-            # if the bot stays silent for the debounce window.
-            self._cancel_pending_idle()
-            self._idle_task = asyncio.create_task(self._emit_idle_after_debounce())
+            # Silence is not a turn boundary: this can be an inter-sentence or
+            # pre/post-tool gap. The ordered FinalResponseDoneFrame barrier owns
+            # idle. While a tool is actively running, show thinking immediately
+            # instead of waiting for a guessed silence duration.
+            if TURN_LIVENESS.in_flight > 0:
+                await self._emit("thinking")
+                self._arm_watchdog()
+            elif self._current == "replying":
+                self._cancel_pending_idle()
+                generation = self._idle_generation
+                self._idle_task = asyncio.create_task(
+                    self._emit_idle_fallback(generation)
+                )
+            else:
+                logger.info(
+                    "📞 stale BotStopped ignored outside replying phase "
+                    f"({self._current!r})"
+                )
+        elif isinstance(frame, FinalResponseDoneFrame):
+            self._pending_final_response_id = frame.response_id
+            logger.info(
+                f"📞 final response {frame.response_id} queued behind reply audio"
+            )
 
+        await self.push_frame(frame, direction)
+
+
+class ResponseCompletionObserver(FrameProcessor):
+    """Complete a turn once its ordered marker exits the output transport."""
+
+    def __init__(self, phase_emitter: PhaseEmitter, **kwargs):
+        super().__init__(**kwargs)
+        self._phase_emitter = phase_emitter
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, FinalResponseDoneFrame):
+            await self._phase_emitter.complete_final_response(frame.response_id)
         await self.push_frame(frame, direction)

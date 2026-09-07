@@ -81,6 +81,8 @@ options:
   # in `hello` so it's tunable like follow_up_open_delay_ms.
   wake_open_delay_ms: 700
   vad_eagerness: "low"
+  # Failure fallback only. Normal replies now use an ordered response/audio
+  # transport barrier and do not wait this 1500 ms.
   phase_idle_debounce_ms: 1500
 
   # --- 🌐 Web search ---
