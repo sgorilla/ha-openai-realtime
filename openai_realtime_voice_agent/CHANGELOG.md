@@ -2,6 +2,18 @@
 
 All notable changes to this add-on. Newest first.
 
+## 0.6.2
+
+**Home location context**
+
+- Added an explicit privacy opt-in that reads the configured Home Assistant
+  home location and supplies it directly to every Realtime conversation, so
+  Pippa understands phrases such as “here,” “near me,” and “around here.”
+- The same approximate location is supplied separately to location-sensitive
+  web searches. Coordinates are rounded to roughly 1 km and are never logged.
+- Location loading fails open: if Home Assistant's configuration cannot be
+  read, voice conversations continue without geographic context.
+
 ## 0.6.1
 
 **Home Assistant control and live information**
