@@ -25,6 +25,9 @@ drop-in for the stock HA voice pipeline.
   Assist.
 - **Web search** (on by default) — the assistant can look things up online
   (weather, news, facts) via a single OpenAI call. Turn it off if you don't want it.
+- **Optional home-location awareness** — opt in to make "here", "nearby", local
+  weather, and place searches use Home Assistant's configured home (coordinates
+  are rounded to roughly 1 km and never logged).
 - **Tunable from the UI** — model, voice, speaking speed, turn detection, a
   post-reply follow-up window, transcription language, and more. Every option has
   inline help on the Configuration tab.

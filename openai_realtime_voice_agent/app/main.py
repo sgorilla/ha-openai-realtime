@@ -21,6 +21,12 @@ from app.response_lifecycle import (
 )
 from app.disconnect_tool import get_disconnect_tool_definition, create_disconnect_tool_handler
 from app.web_search_tool import get_web_search_tool_definition, create_web_search_tool_handler
+from app.home_location import (
+    HomeLocation,
+    append_home_location_context,
+    derive_ha_config_url,
+    load_home_location_if_enabled,
+)
 from app.audio_recording_service import AudioRecordingService
 from app.session_manager import SessionManager
 from app.websocket_handler import WebSocketHandler
@@ -289,6 +295,7 @@ class Application:
         self.mcp_service: Optional[HomeAssistantMCPService] = None
         self.audio_recording_service: Optional[AudioRecordingService] = None
         self.session_manager: Optional[SessionManager] = None
+        self.home_location: Optional[HomeLocation] = None
         self.current_task: Optional[PipelineTask] = None
         self._pipeline_lock: Optional[asyncio.Lock] = None
         
@@ -463,18 +470,37 @@ class Application:
         if not openai_api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required")
         
+        # Use the same authenticated Home Assistant connection for both device
+        # tools and geographic context. /api/config is independent of MCP, so a
+        # temporary MCP failure must not prevent the assistant from knowing its
+        # home location (and vice versa).
+        supervisor_token = os.environ.get("LONGLIVED_TOKEN") or os.environ.get("SUPERVISOR_TOKEN")
+        ha_mcp_url = os.environ.get("HA_MCP_URL") or "http://supervisor/core/api/mcp"
+        share_home_location = os.environ.get("SHARE_HOME_LOCATION", "false").strip().lower() == "true"
+        if share_home_location and supervisor_token:
+            self.home_location = load_home_location_if_enabled(
+                True,
+                derive_ha_config_url(ha_mcp_url),
+                supervisor_token,
+            )
+        elif share_home_location:
+            logger.warning(
+                "Home location sharing is enabled but no Home Assistant access token "
+                "is set; continuing without home location"
+            )
+        else:
+            logger.info("Home location sharing is disabled")
+
         # Initialize Home Assistant MCP Service
         mcp_client = None
         try:
-            supervisor_token = os.environ.get("LONGLIVED_TOKEN") or os.environ.get("SUPERVISOR_TOKEN")
-            ha_mcp_url = os.environ.get("HA_MCP_URL", "http://supervisor/core/api/mcp")
             if supervisor_token:
                 logger.info("Loading Home Assistant MCP tools...")
                 self.mcp_service = HomeAssistantMCPService(url=ha_mcp_url, access_token=supervisor_token)
                 mcp_client = await self.mcp_service.initialize()
                 logger.info("✅ Home Assistant MCP Client initialized")
             else:
-                logger.warning("⚠️ SUPERVISOR_TOKEN not set, skipping Home Assistant MCP integration")
+                logger.warning("⚠️ Home Assistant access token not set, skipping MCP integration")
         except Exception as e:
             logger.warning(f"⚠️ Failed to initialize Home Assistant MCP Client: {e}")
         
@@ -701,8 +727,15 @@ class Application:
                 else None
             )
 
+            # The location suffix is rebuilt for every Realtime session. This
+            # keeps the user's configured prompt authoritative while giving
+            # deictic phrases ("near me", "weather here") a reliable home.
+            session_instructions = append_home_location_context(
+                self.instructions,
+                self.home_location,
+            )
             session_properties = SessionProperties(
-                instructions=self.instructions,
+                instructions=session_instructions,
                 # Cap the reply length: bounds runaway monologues + per-response
                 # output-token cost. None = unlimited (the API default "inf").
                 max_output_tokens=self.max_output_tokens,
@@ -753,7 +786,11 @@ class Application:
             if self.enable_web_search:
                 self.openai_service.register_function(
                     "web_search",
-                    create_web_search_tool_handler(self.openai_api_key, self.web_search_model),
+                    create_web_search_tool_handler(
+                        self.openai_api_key,
+                        self.web_search_model,
+                        home_location=self.home_location,
+                    ),
                 )
                 logger.info(f"✅ Registered web_search tool handler (model={self.web_search_model})")
             

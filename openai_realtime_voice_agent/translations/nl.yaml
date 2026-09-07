@@ -147,6 +147,14 @@ configuration:
       in een rumoerige omgeving slecht verstaat.
 
   # --- 🏠 Home Assistant ---
+  share_home_location:
+    name: "🏠 Home Assistant · Thuislocatie delen"
+    description: >-
+      Laat de assistent "hier", "in de buurt", lokaal weer en vergelijkbare
+      vragen begrijpen met de thuislocatie uit Home Assistant. Staat voor de
+      privacy standaard uit. Als dit aanstaat, ontvangt OpenAI de naam van het
+      huis, het land, de tijdzone en coördinaten afgerond op ongeveer 1 km;
+      exacte coördinaten komen nooit in het add-onlog.
   ha_mcp_url:
     name: "🏠 Home Assistant · MCP-server-URL"
     description: >-

@@ -142,6 +142,14 @@ configuration:
       mishears you in a noisy environment.
 
   # --- 🏠 Home Assistant ---
+  share_home_location:
+    name: "🏠 Home Assistant · Share home location"
+    description: >-
+      Lets the assistant understand "here", "nearby", local weather, and
+      similar questions using Home Assistant's configured home location. Off
+      by default for privacy. When enabled, OpenAI receives the home label,
+      country, time zone, and coordinates rounded to about 1 km; exact
+      coordinates are never written to the add-on log.
   ha_mcp_url:
     name: "🏠 Home Assistant · MCP server URL"
     description: >-

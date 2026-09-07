@@ -98,6 +98,10 @@ options:
   noise_reduction: "off"
 
   # --- 🏠 Home Assistant ---
+  # Privacy opt-in: when enabled, the authenticated /api/config values are
+  # supplied to Realtime and location-sensitive web searches. Exact coordinates
+  # are never logged; OpenAI receives a two-decimal approximation (~1 km).
+  share_home_location: false
   ha_mcp_url: ""
   longlived_token: ""
   mcp_tool_allowlist: ""
@@ -139,6 +143,7 @@ schema:
   playback_prebuffer_ms: int(0,2000)
   noise_reduction: "list(off|near_field|far_field)"
   # --- 🏠 Home Assistant ---
+  share_home_location: bool
   ha_mcp_url: str
   longlived_token: password
   mcp_tool_allowlist: str

@@ -58,6 +58,21 @@ You get a small fixed set of Assist tools (`HassTurnOn`, `HassTurnOff`,
 blank to expose all, or trim to just what you use, e.g.:
 `HassTurnOn,HassTurnOff,HassLightSet,GetLiveContext,GetDateTime`
 
+### Give the assistant its home location (optional)
+
+Turn on **`share_home_location`** if you want *"what's the weather here?"*,
+*"find coffee near me"*, and similar requests to resolve against the home set in
+**Settings → System → General**. The add-on reads Home Assistant's authenticated
+`/api/config`; there is no second location setting to maintain.
+
+This is a privacy opt-in and therefore defaults to **off**. When enabled, the
+Realtime conversation receives the configured home label, country, time zone, and
+coordinates rounded to two decimal places (roughly 1 km). Location-sensitive web
+searches receive the same approximation plus the official OpenAI
+`user_location` country/time-zone fields. Exact coordinates and tokens are never
+written to the add-on log. If Home Assistant is temporarily unavailable or its
+location is incomplete, the assistant continues normally without location context.
+
 ## 4. Recommended starting settings
 
 **The defaults are the recommended settings** — for a first run you only need the
@@ -81,6 +96,7 @@ option has plain-language inline help.
 | `max_context_messages` | `12` | bounds per-turn token cost |
 | `enable_web_search` | `true` | online lookups; set `false` to disable |
 | `web_search_model` | `gpt-5.5` | best-quality search model; mini/nano are cheaper |
+| `share_home_location` | `false` | opt in to HA-backed "here"/"nearby" context; shares ~1 km coordinates with OpenAI |
 
 The legacy `server_vad` turn-detection fields live at the bottom of ⚙️ Advanced and
 only appear when you enable **"Show unused optional configuration options"** —
@@ -95,6 +111,8 @@ add-on then makes a **second, server-side OpenAI call** (the Responses API
 answer back.
 
 - Uses your **existing OpenAI key** — no extra account.
+- With **`share_home_location`** enabled, local searches use Home Assistant's
+  country/time zone and rounded home coordinates automatically.
 - Default model `gpt-5.5` (best quality). Cheaper options trade price/quality
   (`gpt-5.4`, `gpt-5-mini`, the nano models, …) — a few cents per search.
 - Adds ~1–3 s while it searches (the device shows "thinking").
