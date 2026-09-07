@@ -2,6 +2,13 @@
 
 All notable changes to this add-on. Newest first.
 
+## Unreleased
+
+**Debug recordings**
+
+- Input WAVs now capture the Voice PE's native 16 kHz stream before it is
+  resampled for OpenAI, so their declared rate, duration, and pitch are correct.
+
 ## 0.6.5
 
 **Single-owner pipeline lifecycle**

@@ -91,7 +91,7 @@ class AudioRecorder:
         Record audio received from ESP32 device.
         
         Args:
-            audio_bytes: PCM audio bytes (16-bit, 24kHz, mono)
+            audio_bytes: Native device PCM audio bytes (16-bit, 16kHz, mono)
         """
         if self._input_file and audio_bytes:
             # Validate audio format: 16-bit = 2 bytes per sample
