@@ -77,6 +77,15 @@ configuration:
       kunt doorpraten — zonder opnieuw het wake-woord te zeggen. De LED-ring
       toont ondertussen de luisterkleur. 8 voelt natuurlijk; 0 zet het uit
       (wake-woord voor elke vraag).
+  enable_persistent_memory:
+    name: "💬 Gesprek · Blijvend geheugen"
+    description: >-
+      Laat de assistent feiten en voorkeuren tussen gesprekken onthouden.
+      Er wordt alleen iets opgeslagen als je dat uitdrukkelijk vraagt, zoals
+      "onthoud dat…". Je kunt vragen wat hij onthoudt of hem iets laten
+      vergeten. Herinneringen blijven in de afgeschermde opslag van deze
+      add-on en worden alleen als gesprekscontext naar OpenAI gestuurd.
+      Vanwege privacy staat dit standaard uit.
   follow_up_open_delay_ms:
     name: "💬 Gesprek · Naluister-vertraging (ms)"
     description: >-

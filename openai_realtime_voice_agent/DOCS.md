@@ -88,6 +88,7 @@ option has plain-language inline help.
 | `transcription_language` | *(blank)* | set your ISO code (e.g. `nl`): locks the language + logs the user transcript |
 | `instructions` | *(English default)* | the system prompt; swap the LANGUAGE line for your language |
 | `follow_up_listen_seconds` | `8` | mic stays open this long so you can answer back |
+| `enable_persistent_memory` | `false` | opt in to explicitly save/recall/forget facts between conversations |
 | `follow_up_open_delay_ms` | `700` | echo guard before the follow-up mic opens; lower = snappier but risks ghost turns |
 | `wake_open_delay_ms` | `700` | the same echo guard right after the wake chime; lower = snappier wake but risks a ghost turn |
 | `vad_eagerness` | `low` | waits longest before deciding you're done talking |
@@ -101,6 +102,22 @@ option has plain-language inline help.
 The legacy `server_vad` turn-detection fields live at the bottom of ⚙️ Advanced and
 only appear when you enable **"Show unused optional configuration options"** —
 leave them unset unless you have a specific reason.
+
+### Persistent voice memory (optional)
+
+Turn on **`enable_persistent_memory`** to let the assistant retain selected facts
+and preferences after the immediate Realtime conversation expires. Persistence
+is explicit: say *"remember that I prefer…"* or *"save this for next time…"*.
+You can later ask *"what do you remember about…?"* or explicitly tell it to
+forget an item.
+
+Memories live in a private SQLite database in the add-on's persistent `/data`
+directory, survive add-on updates/restarts, and are never written verbatim to the
+add-on log. A bounded recent set is supplied to each new OpenAI Realtime session;
+the assistant can search the rest through its recall tool. Incidental conversation
+is not harvested, and common authentication secrets are rejected. Because saved
+memories are sent to OpenAI as future conversation context, the feature is off by
+default for privacy.
 
 ## 5. Web search
 

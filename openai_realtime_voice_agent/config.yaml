@@ -1,5 +1,5 @@
 name: OpenAI Realtime 2 Voice Agent
-version: "0.6.2"
+version: "0.6.4"
 slug: openai_realtime_voice_agent
 description: Talk to your home with OpenAI gpt-realtime-2 — a voice agent for the Home Assistant Voice PE, with live device control and web search.
 url: https://github.com/xandervanerven/ha-openai-realtime
@@ -70,6 +70,9 @@ options:
 
   # --- 💬 Conversation ---
   follow_up_listen_seconds: 8
+  # Privacy opt-in. Only items explicitly requested with "remember/save this"
+  # are written to the add-on's private persistent /data directory.
+  enable_persistent_memory: false
   # 700 (not 0/200): a reply tail that survives the device AEC and arrives
   # ALONE in the open follow-up mic becomes a ghost turn — verified live
   # 2026-06-12 23:18 at 300 ms: the reply's own i2s/DAC tail (~600 ms) leaked
@@ -131,6 +134,7 @@ schema:
   max_output_tokens: int(0,4096)
   # --- 💬 Conversation ---
   follow_up_listen_seconds: int(0,60)
+  enable_persistent_memory: bool
   follow_up_open_delay_ms: int(0,5000)
   wake_open_delay_ms: int(0,5000)
   vad_eagerness: "list(low|medium|high|auto)"

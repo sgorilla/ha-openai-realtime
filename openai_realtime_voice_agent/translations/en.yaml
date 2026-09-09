@@ -76,6 +76,14 @@ configuration:
       keep talking — no wake word needed. The LED ring shows the listening
       colour while it waits. 8 feels natural; 0 turns it off (wake word
       before every question).
+  enable_persistent_memory:
+    name: "💬 Conversation · Persistent memory"
+    description: >-
+      Lets the assistant keep facts and preferences between conversations.
+      It saves only when you explicitly say something like "remember that…",
+      and you can ask what it remembers or tell it to forget an item. Memories
+      stay in this add-on's private persistent storage and are sent to OpenAI
+      only as conversation context. Off by default for privacy.
   follow_up_open_delay_ms:
     name: "💬 Conversation · Follow-up mic delay (ms)"
     description: >-
