@@ -28,6 +28,9 @@ drop-in for the stock HA voice pipeline.
 - **Optional home-location awareness** — opt in to make "here", "nearby", local
   weather, and place searches use Home Assistant's configured home (coordinates
   are rounded to roughly 1 km and never logged).
+- **Optional persistent memory** — explicitly say *"remember that…"* to keep a
+  fact or preference across voice sessions; ask what it remembers or tell it to
+  forget an item. Incidental conversation is never saved automatically.
 - **Tunable from the UI** — model, voice, speaking speed, turn detection, a
   post-reply follow-up window, transcription language, and more. Every option has
   inline help on the Configuration tab.

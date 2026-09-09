@@ -2,6 +2,18 @@
 
 All notable changes to this add-on. Newest first.
 
+## 0.6.4
+
+**Explicit persistent voice memory**
+
+- Added an opt-in private memory store in the add-on's persistent `/data`
+  directory, with explicit tools to save, recall, and permanently forget an
+  item across Realtime sessions.
+- Memory is disabled by default, bounded before it enters a session prompt,
+  rejects common authentication secrets, and never logs saved content.
+- Changed `audio_send_ahead_ms` to default to 0 after live A/B testing. The
+  bounded sender remains available as a reversible diagnostic option.
+
 ## 0.6.3
 
 **Bounded device-buffered audio delivery**

@@ -77,6 +77,15 @@ configuration:
       kunt doorpraten — zonder opnieuw het wake-woord te zeggen. De LED-ring
       toont ondertussen de luisterkleur. 8 voelt natuurlijk; 0 zet het uit
       (wake-woord voor elke vraag).
+  enable_persistent_memory:
+    name: "💬 Gesprek · Blijvend geheugen"
+    description: >-
+      Laat de assistent feiten en voorkeuren tussen gesprekken onthouden.
+      Er wordt alleen iets opgeslagen als je dat uitdrukkelijk vraagt, zoals
+      "onthoud dat…". Je kunt vragen wat hij onthoudt of hem iets laten
+      vergeten. Herinneringen blijven in de afgeschermde opslag van deze
+      add-on en worden alleen als gesprekscontext naar OpenAI gestuurd.
+      Vanwege privacy staat dit standaard uit.
   follow_up_open_delay_ms:
     name: "💬 Gesprek · Naluister-vertraging (ms)"
     description: >-
@@ -143,8 +152,9 @@ configuration:
     description: >-
       Hoe ver reeds gegenereerde audio vooruit mag worden gestuurd naar de
       gebufferde Voice PE. Zo kan de afspeelbuffer na een korte server- of
-      wifi-hapering herstellen zonder een onbegrensde piek. 3000 wordt aanbevolen
-      voor de aangepaste firmware; 0 herstelt Pipecats standaarddosering voor een A/B.
+      wifi-hapering herstellen zonder een onbegrensde piek. 0 gebruikt Pipecats
+      standaarddosering en is de veilige standaard; gebruik een hogere waarde
+      alleen voor gecontroleerde tests.
   noise_reduction:
     name: "🎚️ Audio · Microfoon-ruisonderdrukking"
     description: >-

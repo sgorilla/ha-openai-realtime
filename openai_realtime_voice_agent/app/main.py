@@ -27,6 +27,8 @@ from app.home_location import (
     derive_ha_config_url,
     load_home_location_if_enabled,
 )
+from app.memory_store import MemoryStore, append_memory_context
+from app.memory_tool import get_memory_tool_definitions, create_memory_tool_handlers
 from app.audio_recording_service import AudioRecordingService
 from app.session_manager import SessionManager
 from app.websocket_handler import WebSocketHandler
@@ -296,6 +298,8 @@ class Application:
         self.audio_recording_service: Optional[AudioRecordingService] = None
         self.session_manager: Optional[SessionManager] = None
         self.home_location: Optional[HomeLocation] = None
+        self.memory_store: Optional[MemoryStore] = None
+        self.persistent_memory_requested = False
         self.current_task: Optional[PipelineTask] = None
         self._pipeline_lock: Optional[asyncio.Lock] = None
         
@@ -409,6 +413,36 @@ class Application:
 
         # Get recording setting (optional, defaults to false)
         enable_recording = os.environ.get("ENABLE_RECORDING", "false").lower() == "true"
+
+        # Durable memory is privacy opt-in. When enabled, only facts the user
+        # explicitly asks the assistant to remember are stored in the add-on's
+        # private persistent /data directory; incidental conversation is not.
+        enable_persistent_memory = (
+            os.environ.get("ENABLE_PERSISTENT_MEMORY", "false").strip().lower()
+            == "true"
+        )
+        self.persistent_memory_requested = enable_persistent_memory
+        if enable_persistent_memory:
+            memory_db_path = os.environ.get(
+                "PERSISTENT_MEMORY_DB_PATH", "/data/assistant_memory.sqlite3"
+            )
+            try:
+                self.memory_store = MemoryStore(memory_db_path)
+                logger.info(
+                    "Persistent memory enabled (%d active item(s))",
+                    self.memory_store.count(),
+                )
+            except Exception as error:
+                # Memory must never take the entire voice assistant down. Keep
+                # the failure content/path out of logs; the exception type is
+                # enough to diagnose permissions/corruption safely.
+                self.memory_store = None
+                logger.error(
+                    "Persistent memory unavailable (%s); voice service will continue",
+                    type(error).__name__,
+                )
+        else:
+            logger.info("Persistent memory disabled")
         
         # Post-reply follow-up window: how many seconds the device keeps the mic
         # open after the assistant finishes so the user can answer back without
@@ -450,9 +484,9 @@ class Application:
         # depth after a stall. A bounded send-ahead cushion can; unlike fully
         # unpaced output, it cannot overflow the Voice PE's finite PSRAM ring.
         try:
-            audio_send_ahead_ms = int(os.environ.get("AUDIO_SEND_AHEAD_MS", "3000"))
+            audio_send_ahead_ms = int(os.environ.get("AUDIO_SEND_AHEAD_MS", "0"))
         except (TypeError, ValueError):
-            audio_send_ahead_ms = 3000
+            audio_send_ahead_ms = 0
         audio_send_ahead_ms = max(0, min(10000, audio_send_ahead_ms))
 
         # Get session reuse timeout and initialize session manager
@@ -646,6 +680,9 @@ class Application:
             if self.enable_web_search:
                 all_tools.append(get_web_search_tool_definition())
 
+            if self.memory_store is not None:
+                all_tools.extend(get_memory_tool_definitions())
+
             # Get MCP tool definitions if available
             mcp_tools_schema = None
             mcp_tool_bindings = []
@@ -744,6 +781,27 @@ class Application:
                 self.instructions,
                 self.home_location,
             )
+            try:
+                session_instructions = append_memory_context(
+                    session_instructions,
+                    self.memory_store,
+                )
+            except Exception as error:
+                logger.error(
+                    "Persistent memory context unavailable (%s)",
+                    type(error).__name__,
+                )
+                session_instructions += (
+                    "\n\nPersistent memory is temporarily unavailable. If the user "
+                    "asks you to save, recall, or forget something, say plainly "
+                    "that persistent memory is unavailable; never claim it worked."
+                )
+            if self.persistent_memory_requested and self.memory_store is None:
+                session_instructions += (
+                    "\n\nPersistent memory is temporarily unavailable. If the user "
+                    "asks you to save, recall, or forget something, say plainly "
+                    "that persistent memory is unavailable; never claim it worked."
+                )
             session_properties = SessionProperties(
                 instructions=session_instructions,
                 # Cap the reply length: bounds runaway monologues + per-response
@@ -803,6 +861,13 @@ class Application:
                     ),
                 )
                 logger.info(f"✅ Registered web_search tool handler (model={self.web_search_model})")
+
+            if self.memory_store is not None:
+                for name, handler in create_memory_tool_handlers(
+                    self.memory_store
+                ).items():
+                    self.openai_service.register_function(name, handler)
+                logger.info("✅ Registered persistent memory tool handlers")
             
             # Register MCP tool handlers if available
             if self.mcp_service and mcp_tool_bindings:
