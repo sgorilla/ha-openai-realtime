@@ -553,10 +553,11 @@ class WebSocketHandler:
         runner = PipelineRunner()
         task = PipelineTask(pipeline, idle_timeout_secs=None, cancel_on_idle_timeout=False)
         
-        # Start pipeline in background
-        asyncio.create_task(runner.run(task))
-        logger.info("✅ Pipeline started for WebSocket connection")
-        logger.info("✅ Pipeline initialized successfully")
+        # Do not start the runner here. Application.run() owns the one and only
+        # runner invocation for this task. Starting it both here and there sent
+        # two StartFrames through the same processors and left duplicate
+        # observer/audio tasks competing for one transport.
+        logger.info("✅ Pipeline initialized; runner start delegated to application")
 
         # Wire the device "stop" interrupt. The serializer calls this when it
         # sees {"type":"interrupt"} from the device.

@@ -2,6 +2,17 @@
 
 All notable changes to this add-on. Newest first.
 
+## 0.6.5
+
+**Single-owner pipeline lifecycle**
+
+- Fixed the same Pipecat pipeline task being started twice, which sent two
+  StartFrames through one audio transport and could leave observer/output tasks
+  competing or destroyed while pending.
+- Device reconnects now bind to the Realtime service already installed in the
+  active pipeline instead of constructing an unused service and routing control
+  events to the wrong object.
+
 ## 0.6.4
 
 **Explicit persistent voice memory**

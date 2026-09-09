@@ -948,7 +948,23 @@ class Application:
         # Setup WebSocket event handlers
         async def on_client_connected(client_id: str):
             """Handle new client connection."""
-            await self._ensure_openai_service(client_id=client_id)
+            # The server owns one persistent pipeline and that pipeline already
+            # contains self.openai_service. Creating a replacement service here
+            # does not insert it into the existing pipeline; it only leaves an
+            # unused Realtime session in SessionManager and routes interrupts to
+            # the wrong object. Bind this socket to the service that is actually
+            # processing its audio instead.
+            if self.openai_service is None:
+                raise RuntimeError("OpenAI service is unavailable on client connect")
+            if self.session_manager:
+                self.session_manager.set_current_service(
+                    client_id,
+                    self.openai_service,
+                )
+            logger.info(
+                "🔗 Bound client %s to the existing pipeline service",
+                client_id,
+            )
             if self.audio_recording_service:
                 self.audio_recording_service.start_new_session(client_id)
         
