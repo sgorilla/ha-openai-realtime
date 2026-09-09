@@ -22,6 +22,7 @@ from app.session_manager import SessionManager
 from app.audio_recording_service import AudioRecordingService
 from app.phase_emitter import PhaseEmitter, ResponseCompletionObserver
 from app.transcript_logger import TranscriptLogger
+from app.buffered_websocket_transport import BufferedWebsocketServerTransport
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +339,7 @@ class WebSocketHandler:
         follow_up_open_delay_ms: int = 700,
         wake_open_delay_ms: int = 700,
         playback_prebuffer_ms: int = 0,
+        audio_send_ahead_ms: int = 0,
     ):
         """
         Initialize WebSocket handler.
@@ -356,6 +358,9 @@ class WebSocketHandler:
             wake_open_delay_ms: How long (ms) the device waits after the wake
                 chime before opening the mic, so the chime's hardware tail can't
                 leak into the fresh mic as a ghost turn. Sent in `hello`.
+            audio_send_ahead_ms: Maximum amount of already-generated PCM that
+                may be sent ahead of wall-clock playback. 0 keeps stock Pipecat
+                pacing; a positive value enables bounded device buffering.
         """
         self.host = host
         self.port = port
@@ -365,6 +370,7 @@ class WebSocketHandler:
         self.follow_up_open_delay_ms = max(0, int(follow_up_open_delay_ms))
         self.wake_open_delay_ms = max(0, int(wake_open_delay_ms))
         self.playback_prebuffer_ms = max(0, int(playback_prebuffer_ms))
+        self.audio_send_ahead_ms = max(0, min(10000, int(audio_send_ahead_ms)))
 
         self.transport: Optional[WebsocketServerTransport] = None
         self.pipeline: Optional[Pipeline] = None
@@ -393,9 +399,16 @@ class WebSocketHandler:
         serializer = RawAudioSerializer()
         self._serializer = serializer
 
-        # Create WebsocketServerTransport with WebsocketServerParams
+        # The Voice PE buffers playback in PSRAM. A bounded send-ahead cushion
+        # lets that buffer refill after a brief stall without allowing a long
+        # answer to outrun its finite ring. Zero preserves stock Pipecat pacing.
         # The transport will start its own server automatically
-        self.transport = WebsocketServerTransport(
+        transport_class = (
+            BufferedWebsocketServerTransport
+            if self.audio_send_ahead_ms > 0
+            else WebsocketServerTransport
+        )
+        transport_kwargs = dict(
             host=self.host,
             port=self.port,
             params=WebsocketServerParams(
@@ -404,8 +417,11 @@ class WebSocketHandler:
                 audio_out_enabled=True,
                 audio_in_sample_rate=PIPELINE_SAMPLE_RATE,
                 audio_out_sample_rate=PIPELINE_SAMPLE_RATE,
-            )
+            ),
         )
+        if self.audio_send_ahead_ms > 0:
+            transport_kwargs["audio_send_ahead_ms"] = self.audio_send_ahead_ms
+        self.transport = transport_class(**transport_kwargs)
         
         logger.info(f"✅ WebSocket transport created - will listen on ws://{self.host}:{self.port}/")
         return self.transport

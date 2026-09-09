@@ -93,6 +93,7 @@ option has plain-language inline help.
 | `vad_eagerness` | `low` | waits longest before deciding you're done talking |
 | `phase_idle_debounce_ms` | `1500` | fallback only if the ordered response-completion marker is lost; normal replies do not wait it |
 | `playback_prebuffer_ms` | `150` | raise to ~250 if you hear crackle; 0 = play immediately |
+| `audio_send_ahead_ms` | `3000` | bounded cushion for the buffered Voice PE; 0 restores stock Pipecat pacing |
 | `max_context_messages` | `12` | bounds per-turn token cost |
 | `enable_web_search` | `true` | online lookups; set `false` to disable |
 | `web_search_model` | `gpt-5.5` | best-quality search model; mini/nano are cheaper |
@@ -134,6 +135,11 @@ Every option has a description on the **Configuration** tab. The ones worth know
   into the fresh follow-up mic and become a ghost turn (the assistant "answers
   nobody" or repeats itself); raise the prebuffer if you hear crackle at the
   start of replies.
+- **`audio_send_ahead_ms`** defaults to 3000 for the custom buffered Voice PE.
+  This allows a bounded three-second cushion of generated audio so the device
+  buffer can refill after a brief server or Wi-Fi stall. The bound prevents long
+  replies from overrunning the device's finite playback ring; set 0 to restore
+  stock Pipecat pacing for a direct A/B comparison.
 
 ## 7. Reading the logs
 

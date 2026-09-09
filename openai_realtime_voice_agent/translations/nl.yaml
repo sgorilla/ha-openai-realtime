@@ -138,6 +138,13 @@ configuration:
       incidentele krakje), maar elk antwoord begint zoveel later. 150 is een
       goede balans; verhoog naar 250–300 bij blijvend kraken, 0 = direct
       afspelen.
+  audio_send_ahead_ms:
+    name: "🎚️ Audio · Vooruitzendbuffer (ms)"
+    description: >-
+      Hoe ver reeds gegenereerde audio vooruit mag worden gestuurd naar de
+      gebufferde Voice PE. Zo kan de afspeelbuffer na een korte server- of
+      wifi-hapering herstellen zonder een onbegrensde piek. 3000 wordt aanbevolen
+      voor de aangepaste firmware; 0 herstelt Pipecats standaarddosering voor een A/B.
   noise_reduction:
     name: "🎚️ Audio · Microfoon-ruisonderdrukking"
     description: >-

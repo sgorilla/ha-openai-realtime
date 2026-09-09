@@ -2,6 +2,17 @@
 
 All notable changes to this add-on. Newest first.
 
+## 0.6.3
+
+**Bounded device-buffered audio delivery**
+
+- Added a reversible `audio_send_ahead_ms` option. With the custom buffered
+  Voice PE firmware, a small bounded cushion lets already-generated audio refill
+  the device jitter buffer immediately after a brief server or network stall.
+- The cushion is explicitly capped at the configured duration, so a long answer
+  cannot build an unbounded lead and overrun the device's finite ring. The Voice
+  PE default is 3000 ms; setting 0 restores standard Pipecat pacing for an A/B.
+
 ## 0.6.2
 
 **Home location context**
