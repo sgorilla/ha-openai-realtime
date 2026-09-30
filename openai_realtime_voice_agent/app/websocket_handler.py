@@ -467,18 +467,28 @@ class WebSocketHandler:
             context_aggregator = self.session_manager.create_context_aggregator(client_id)
             context_initializer = self.session_manager.create_context_initializer(client_id, context_aggregator)
         
-        # Build pipeline components. InputResampler runs FIRST (right after the
-        # transport) so every later stage — VAD, context aggregator, OpenAI
-        # service — sees correctly-rated 24 kHz audio instead of the device's
-        # raw 16 kHz (which OpenAI would otherwise read 1.5x too fast).
+        # Build the input side of the pipeline. The debug recorder intentionally
+        # taps the exact 16 kHz bytes received from the device BEFORE
+        # InputResampler changes their rate. This keeps the WAV header, duration,
+        # pitch, and retention limit truthful and preserves the best evidence for
+        # diagnosing device/transport audio. Every functional consumer after the
+        # recorder still sees the correctly-rated 24 kHz stream OpenAI requires.
         # Built early so ConnectionRecovery can route its unstick/reconnect
         # idle through PhaseEmitter.force_idle() (consistent phase state +
         # racing-`thinking` suppression); it is APPENDED near the end of the
         # pipeline below, before transport.output().
         phase_emitter = PhaseEmitter(send_phase=self.broadcast_phase)
 
-        pipeline_components = [
-            transport.input(),
+        pipeline_components = [transport.input()]
+
+        # Capture ONLY the raw device InputAudioRawFrame. Keep this before every
+        # rate-changing processor: AudioRecorder labels input WAVs at the Voice
+        # PE's native 16 kHz and sizes its ten-minute bound from that rate.
+        input_recorder = self.audio_recording_service.get_input_recorder() if self.audio_recording_service else None
+        if input_recorder:
+            pipeline_components.append(input_recorder)
+
+        pipeline_components.extend([
             # Watch for OpenAI connection-death ErrorFrames (they travel upstream
             # to the task source, so place this upstream of the service) and
             # reconnect in place. Without it a 1011/1001 drop bricks the session.
@@ -486,12 +496,7 @@ class WebSocketHandler:
                                phase_emitter=phase_emitter),
             InputResampler(out_rate=PIPELINE_SAMPLE_RATE),
             input_activity_tracker,
-        ]
-        
-        # Add input audio recorder to capture ONLY InputAudioRawFrame
-        input_recorder = self.audio_recording_service.get_input_recorder() if self.audio_recording_service else None
-        if input_recorder:
-            pipeline_components.append(input_recorder)
+        ])
         
         # Continue with rest of pipeline, with transcript-logging taps. The
         # assistant reply text (TTSTextFrame) flows DOWNSTREAM out of the LLM
